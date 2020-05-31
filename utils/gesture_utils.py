@@ -4,15 +4,13 @@ import math
 import os
 import csv
 import cv2
-import detector_utils as detector_utils
+from utils import detector_utils as detector_utils
 
-PATH_TO_TRAIN_DATA_FILE = '/home/ros/data.csv'
-
-PATH_TO_MODEL_DIRECTORY = '/home/ros/NN_files/'
+PATH_TO_TRAIN_DATA_FILE = 'data.csv'
 
 def initialize_datafile():
     if not os.path.exists(PATH_TO_TRAIN_DATA_FILE):
-        with open(PATH_TO_TRAIN_DATA_FILE, mode='wb') as data_file:
+        with open(PATH_TO_TRAIN_DATA_FILE, mode='w') as data_file:
             datawriter = csv.writer(data_file, delimiter=',')
 
             i = 0
@@ -26,8 +24,9 @@ def initialize_datafile():
             datawriter.writerow(row)
             print('Created data file')
 
-def write_path_to_datafile(lastPos, cap_params, meanx, meany, added_pos):
+def write_path_to_datafile(lastPos, cap_params, meanx, meany, added_pos, pred, PREDICT_GESTURE):
     if added_pos < 2:
+        gesture_row = [0,0,0,0,0]
         i = added_pos
         row = []
         for coord in range(len(lastPos[i])):
@@ -36,12 +35,17 @@ def write_path_to_datafile(lastPos, cap_params, meanx, meany, added_pos):
                     row.append(int(lastPos[i][coord][pos]*cap_params['im_width'])-meanx[i])
                 else:
                     row.append(int(lastPos[i][coord][pos]*cap_params['im_height'])-meany[i])
-        row.extend([0,0,0,0,1])
+        if PREDICT_GESTURE:
+            gesture_row[pred[i]] = 1
+            row.extend(gesture_row)
+        else:
+            row.extend([0,0,0,0,1])
         with open(PATH_TO_TRAIN_DATA_FILE, mode='a') as data_file:
             datawriter = csv.writer(data_file, delimiter=',')
             datawriter.writerow(row)
     else:
         for i in range(0,2):
+            gesture_row = [0,0,0,0,0]
             row = []
             for coord in range(len(lastPos[i])):
                 for pos in range(len(lastPos[i][coord])):
@@ -49,17 +53,21 @@ def write_path_to_datafile(lastPos, cap_params, meanx, meany, added_pos):
                         row.append(int(lastPos[i][coord][pos]*cap_params['im_width'])-meanx[i])
                     else:
                         row.append(int(lastPos[i][coord][pos]*cap_params['im_height'])-meany[i])
-            row.extend([0,0,0,0,1])
+            if PREDICT_GESTURE:
+                gesture_row[pred[i]] = 1
+                row.extend(gesture_row)
+            else:
+                row.extend([0,0,0,0,1])
             with open(PATH_TO_TRAIN_DATA_FILE, mode='a') as data_file:
                 datawriter = csv.writer(data_file, delimiter=',')
                 datawriter.writerow(row)
 
-def load_net():
-    json_file = open(PATH_TO_MODEL_DIRECTORY + 'model.json','r')
+def load_net(PATH_TO_CWD):
+    json_file = open(PATH_TO_CWD + '/NN_files/model.json','r')
     model_json = json_file.read()
     json_file.close()
     model = model_from_json(model_json)
-    model.load_weights(PATH_TO_MODEL_DIRECTORY + 'model.h5')
+    model.load_weights(PATH_TO_CWD + '/NN_files/model.h5')
     model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
     return model
 
@@ -69,7 +77,7 @@ def initialize():
     for i in range(15):
         lastPos[0].append((1,0))
         lastPos[1].append((0,0))
-    for i in range(7):
+    for i in range(15):
         for j in range(2):
             lastOutput[j].append(4)
     return lastPos, lastOutput
@@ -136,9 +144,10 @@ def update_lastpos(positions, lastPos):
         '''
     return lastPos, added_pos
 
-def predict_gestures(lastPos,cap_params,model,lastOutput):
+def predict_gestures(lastPos,cap_params,model,lastOutput, added_pos):
     meanx,meany = [0,0],[0,0]
     predicted_gestures = [0,0]
+    predicted_gestures_raw = [0,0]
     #Draw paths described by hands
     for hand in range(len(lastPos)):
         tempx, tempy = 0, 0
@@ -160,13 +169,24 @@ def predict_gestures(lastPos,cap_params,model,lastOutput):
         posarray = np.array([posarray,])
         pred = np.argmax(model.predict(posarray))
 
-        lastOutput[hand] = lastOutput[hand][-1:] + lastOutput[hand][:-1]
-        lastOutput[hand][0] = pred
+        if added_pos == hand or added_pos == 2:
+            lastOutput[hand] = lastOutput[hand][-1:] + lastOutput[hand][:-1]
+            lastOutput[hand][0] = pred
+            predicted_gestures_raw[hand] = pred
+       
+        #pred = max(set(lastOutput[hand]), key = lastOutput[hand].count)
 
-        pred = max(set(lastOutput[hand]), key = lastOutput[hand].count)
+        if lastOutput[hand].count(lastOutput[hand][0]) == len(lastOutput[hand]): #If all 15 last predicted gestures are equal, this is the prediction, else no gesture
+            #print("All gestures equal in list " + str(hand))
+            #print("Hand " + str(hand) + ": " + str(lastOutput[hand].count(lastOutput[hand][0])) + " , " + str(len(lastOutput[hand])))
+            pred = lastOutput[hand][0]
+        else:
+            pred = 4
+
         predicted_gestures[hand] = pred
 
-    return predicted_gestures, lastOutput, meanx, meany
+    #print(lastOutput)
+    return predicted_gestures, lastOutput, meanx, meany, predicted_gestures_raw
 
 
 def construct_output(image_np,cap_params,lastPos,prediction, scores, boxes):
@@ -188,9 +208,9 @@ def construct_output(image_np,cap_params,lastPos,prediction, scores, boxes):
                 cv2.putText(image_np, "Horizontal", (180, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
             elif prediction[hand] == 1:
                 cv2.putText(image_np, "Vertical", (180, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-            elif prediction[hand] == 2:
-                cv2.putText(image_np, "Counter clk circle", (180, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
             elif prediction[hand] == 3:
+                cv2.putText(image_np, "Counter clk circle", (180, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+            elif prediction[hand] == 2:
                 cv2.putText(image_np, "Clk circle", (180, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
             elif prediction[hand] == 4:
                 cv2.putText(image_np, "No gesture", (180, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
@@ -199,9 +219,9 @@ def construct_output(image_np,cap_params,lastPos,prediction, scores, boxes):
                 cv2.putText(image_np, "Horizontal", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             elif prediction[hand] == 1:
                 cv2.putText(image_np, "Vertical", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-            elif prediction[hand] == 2:
-                cv2.putText(image_np, "Counter clk circle", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             elif prediction[hand] == 3:
+                cv2.putText(image_np, "Counter clk circle", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            elif prediction[hand] == 2:
                 cv2.putText(image_np, "Clk circle", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             elif prediction[hand] == 4:
                 cv2.putText(image_np, "No gesture", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
