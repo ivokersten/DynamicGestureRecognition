@@ -20,7 +20,7 @@ PREDICT_GESTURE = False
 #Track processing speed
 TRACK_FPS = False
 #Save output frames to video file
-SAVE_OUTPUT = True
+SAVE_OUTPUT = False
 
 #Number of threads to create to find hands
 NUM_THREADS = 4
@@ -54,11 +54,10 @@ def Assembler(worker_q, worker_frame_q, cap_params):
     prev_prediction = [4, 4]
 
     #Load network to recognize gestures
-    model = gesture_utils.load_net(os.path.abspath(os.getcwd()))
+    model = gesture_utils.load_net()
     #Initialize lastPos and lastOutput with default values
     lastPos, lastOutput = gesture_utils.initialize()
     start_time = None
-    startup_time = None
     frameCounter = 0 #To count elapsed frame
     idleTimer = time.time()
     PROCESSING = False
@@ -76,9 +75,6 @@ def Assembler(worker_q, worker_frame_q, cap_params):
             #print("Assembler acquired frame")
             if start_time == None and TRACK_FPS: #Note time the first frame is processed
                 start_time = time.time()
-
-            if startup_time == None:
-                startup_time = time.time()
 
             #Obtain access to queue of worker output
             frame_cv.acquire()
@@ -99,11 +95,9 @@ def Assembler(worker_q, worker_frame_q, cap_params):
                 prediction, lastOutput, meanx, meany, predicted_gestures_raw = gesture_utils.predict_gestures(lastPos, cap_params,model, lastOutput, added_pos) #Obtain predicted gesture based on new input
 
                 if prev_prediction[0] != prediction[0]:
-                    print("Time: " + str(time.time()-startup_time))
                     print(prediction[0])
                     prev_prediction[0] = prediction[0]
                 if prev_prediction[1] != prediction[1]:
-                    print("Time: " + str(time.time()-startup_time))
                     print(prediction[1])
                     prev_prediction[1] = prediction[1]
 
@@ -137,7 +131,6 @@ def Assembler(worker_q, worker_frame_q, cap_params):
                     cv2.imshow('detected hands', image_np)
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         TERMINATE = True
-                        pass
 
             #Put response message in queue
             #output_q.put(prediction)

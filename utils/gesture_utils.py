@@ -6,7 +6,9 @@ import csv
 import cv2
 from utils import detector_utils as detector_utils
 
-PATH_TO_TRAIN_DATA_FILE = 'data.csv'
+PATH_TO_TRAIN_DATA_FILE = 'Motion_Classification/data.csv'
+
+PATH_TO_NN = 'NN_files/'
 
 def initialize_datafile():
     if not os.path.exists(PATH_TO_TRAIN_DATA_FILE):
@@ -62,12 +64,12 @@ def write_path_to_datafile(lastPos, cap_params, meanx, meany, added_pos, pred, P
                 datawriter = csv.writer(data_file, delimiter=',')
                 datawriter.writerow(row)
 
-def load_net(PATH_TO_CWD):
-    json_file = open(PATH_TO_CWD + '/NN_files/model.json','r')
+def load_net():
+    json_file = open(PATH_TO_NN + 'model.json','r')
     model_json = json_file.read()
     json_file.close()
     model = model_from_json(model_json)
-    model.load_weights(PATH_TO_CWD + '/NN_files/model.h5')
+    model.load_weights(PATH_TO_NN + 'model.h5')
     model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
     return model
 
